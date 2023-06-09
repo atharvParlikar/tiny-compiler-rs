@@ -10,7 +10,7 @@ struct Token {
 struct ASTnode {
     type_: String,
     name: String,
-    params: Option<Vec<Token>>
+    params: Option<Vec<ASTnode>>
 }
 
 fn tokanize(code: String) -> Vec<Token> {
@@ -80,13 +80,13 @@ fn tokanize(code: String) -> Vec<Token> {
     return tokens;
 }
 
-fn parser(tokens: Vec<Token>) {
-    let mut current = 0;
-    let walk = || -> Result<ASTnode, String> {
-        let mut token = &tokens[current];
+fn parser(tokens: Vec<Token>) -> Result<ASTnode, String> {
+    let mut current: usize = 0;
+    fn walk(tokens: &Vec<Token>, current: &mut usize) -> Result<ASTnode, String> {
+        let mut token = &tokens[*current];
         match token {
             t if token.type_ == "number" => {
-                current += 1;
+                *current += 1;
                 return Ok(ASTnode {
                     type_: "NumberLiteral".to_string(),
                     name: t.value.clone(),
@@ -94,45 +94,68 @@ fn parser(tokens: Vec<Token>) {
                 })
             },
             t if token.type_ == "string" => {
-                current += 1;
+                *current += 1;
                 return Ok(ASTnode {
                     type_: "StringLiteral".to_string(),
                     name: t.value.clone(),
                     params: None
                 });
             },
-            _ if token.type_ == "param" && token.value == "(" => {
-                current += 1;
-                token = &tokens[current];
-                let node = ASTnode {
+            _ if token.type_ == "paren" && token.value == "(" => {
+                *current += 1;
+                token = &tokens[*current];
+                let mut node = ASTnode {
                     type_: "CallExpression".to_string(),
                     name: token.value.clone(),
                     params: Some(Vec::new())
                 };
 
-                current += 1;
-                token = &tokens[current];
+                *current += 1;
+                token = &tokens[*current];
 
-                while token.type_ != "paran".to_string() || (token.type_ == "param" && token.value != ")") {
-                    // TODO := find a way to implement this walk recursion as a closure cannot be
-                    //         recursively called.
-                    node.params.unwrap().push(walk());
+                while token.type_ != "paren".to_string() || (token.type_ == "paren" && token.value != ")") {
+                    match &mut node.params {
+                        Some(params) => {
+                            params.push(walk(tokens, current).unwrap());
+                            token = &tokens[*current];
+                        }
+                        None => {}
+                    };
                 }
-
+                *current += 1;
                 return Ok(node);
-            }
+            },
             _ => {
                 return Err(String::from("Invalid character"))
             }
         }
-    };
+    }
+    return walk(&tokens, &mut current);
+}
+
+fn print_ast(tree: ASTnode) {
+    let mut tabs :usize = 0;
+    fn recur(tree: ASTnode, tabs: &mut usize) {
+        match tree.params {
+            Some(params) => {
+                println!("{}{} :- {}", " ".to_string().repeat(*tabs * 4), tree.type_, tree.name);
+                *tabs += 1;
+                for i in params {
+                    recur(i, tabs);
+                }
+            }
+            None => {
+                println!("{}{} :- {}", " ".to_string().repeat(*tabs * 4), tree.type_, tree.name);
+            }
+        }
+    }
+    recur(tree, &mut tabs);
 }
 
 fn main() {
-    let tokens = tokanize(" 1234 (keyword\"a string\")".to_string());
-    let mut token_str = "".to_string();
-    for i in tokens {
-        token_str.push_str(format!("{}, ", i.value.as_str()).as_str());
-    }
-    println!("[{}]", &token_str[0..token_str.chars().count() - 2]);
+    let code = "(add 4 (substract 3 8))".to_string();
+    println!("\nLisp style function calls := {}\n", code);
+    let tokens = tokanize(code);
+    println!("Abstract syntax tree (shitty representation):");
+    print_ast(parser(tokens).unwrap());
 }
